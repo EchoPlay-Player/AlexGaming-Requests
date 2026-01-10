@@ -1,0 +1,11 @@
+Alex Gaming Request Portal License
+Copyright (c) 2026 Alex Gaming. All rights reserved.
+
+1. SCOPE: This repository is the designated area for all external communication, 
+   product key requests, and contributions related to Alex Gaming projects.
+2. NO CODE RIGHTS: This repository does NOT grant any permission to clone, 
+   copy, or redistribute the source code of Office Suite Pro or the 
+   Alex Gaming Portal for personal use.
+3. SUBMISSION RULES: All Pull Requests must follow the structure defined 
+   in 'index.html'. Unauthorized files outside the 'PR/' directory 
+   will result in an automatic rejection.
