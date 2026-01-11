@@ -1,0 +1,45 @@
+name: "Global Request Validation"
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq  # Für JSON Prüfung
+          pip install html5lib        # Für HTML Prüfung
+
+      - name: Validate Files
+        run: |
+          # Findet alle geänderten Dateien und prüft Syntax je nach Endung
+          errors=0
+          for file in $(find . -type f -not -path '*/.*'); do
+            echo "Processing $file..."
+            
+            # JSON Prüfung
+            if [[ $file == *.json ]]; then
+              jq . "$file" > /dev/null || { echo "Invalid JSON in $file"; errors=$((errors+1)); }
+            
+            # HTML Prüfung
+            elif [[ $file == *.html ]]; then
+              python3 -m html.dom.minidom "$file" > /dev/null 2>&1 || { echo "Potential HTML error in $file"; }
+            
+            # Shell/Script Prüfung
+            elif [[ $file == *.sh ]]; then
+              bash -n "$file" || { echo "Bash syntax error in $file"; errors=$((errors+1)); }
+            fi
+          done
+
+          if [ $errors -gt 0 ]; then
+            echo "Validation failed with $errors errors."
+            exit 1
+          fi
+          echo "All files passed functional check."
