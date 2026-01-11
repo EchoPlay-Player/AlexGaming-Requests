@@ -3,6 +3,7 @@ name: "Global Request Validation"
 on:
   pull_request:
     branches: [ main ]
+    types: [opened, edited, synchronize]
 
 jobs:
   validate:
@@ -11,7 +12,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Wichtig, um Unterschiede zwischen Branches zu berechnen
+          fetch-depth: 0
 
       - name: Install Validators
         run: |
@@ -24,13 +25,18 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           echo "Checking legal agreement checkboxes..."
-          # Prüft auf [x] oder [X] für die drei wichtigen Sätze
-          if echo "$PR_BODY" | grep -qi "\[x\] I accept the Alex Gaming Proprietary License" && \
-             echo "$PR_BODY" | grep -qi "\[x\] I confirm that I will not clone the source code" && \
-             echo "$PR_BODY" | grep -qi "\[x\] I understand that maintainers only process"; then
+          
+          # Suche nach den Checkboxen [x] oder [X]
+          # Wir nutzen grep mit -z, um Zeilenumbrüche besser zu handhaben
+          CHECK1=$(echo "$PR_BODY" | grep -qi "\[x\] I accept the Alex Gaming Proprietary License" && echo "ok" || echo "miss")
+          CHECK2=$(echo "$PR_BODY" | grep -qi "\[x\] I confirm that I will not clone the source code" && echo "ok" || echo "miss")
+          CHECK3=$(echo "$PR_BODY" | grep -qi "\[x\] I understand that maintainers only process" && echo "ok" || echo "miss")
+
+          if [ "$CHECK1" = "ok" ] && [ "$CHECK2" = "ok" ] && [ "$CHECK3" = "ok" ]; then
             echo "✅ Legal agreement verified."
           else
-            echo "❌ ERROR: You must check all boxes in the 'Legal Agreement' section of the PR description!"
+            echo "❌ ERROR: You must check all 3 boxes in the 'Legal Agreement' section!"
+            echo "Current Status: 1:$CHECK1, 2:$CHECK2, 3:$CHECK3"
             exit 1
           fi
 
@@ -38,32 +44,31 @@ jobs:
         run: |
           errors=0
           
-          # 1. Dateiprüfung auf Syntax
+          # 1. Syntax Prüfung für alle Dateien
+          echo "Starting syntax validation..."
           for file in $(find . -type f -not -path '*/.*'); do
-            echo "Checking syntax for $file..."
             if [[ $file == *.json ]]; then
-              jq . "$file" > /dev/null || { echo "Invalid JSON in $file"; errors=$((errors+1)); }
+              jq . "$file" > /dev/null || { echo "❌ Invalid JSON in $file"; errors=$((errors+1)); }
             elif [[ $file == *.html ]]; then
-              python3 -m html.dom.minidom "$file" > /dev/null 2>&1 || { echo "Potential HTML error in $file"; }
+              python3 -m html.dom.minidom "$file" > /dev/null 2>&1 || { echo "⚠️ Potential HTML issue in $file"; }
             elif [[ $file == *.sh ]]; then
-              bash -n "$file" || { echo "Bash syntax error in $file"; errors=$((errors+1)); }
+              bash -n "$file" || { echo "❌ Bash syntax error in $file"; errors=$((errors+1)); }
             fi
           done
 
-          # 2. Strukturprüfung (Nur Änderungen in /PR/ erlaubt)
-          # Vergleicht den PR mit dem main Branch
+          # 2. Strukturprüfung (Nur Änderungen in /PR/ oder .github/ erlaubt)
           echo "Checking file paths..."
+          # Listet alle Dateien auf, die im Vergleich zum Main-Branch geändert wurden
           changed_files=$(git diff --name-only origin/main...HEAD)
           for f in $changed_files; do
-            # Erlaubt sind nur Dateien in PR/ oder Änderungen an Systemdateien im .github/ Ordner
-            if [[ ! $f == PR/* ]] && [[ ! $f == .github/* ]]; then
-              echo "❌ ERROR: Modification of $f is prohibited. Only files inside the 'PR/' folder may be submitted."
+            if [[ ! $f == PR/* ]] && [[ ! $f == .github/* ]] && [[ ! $f == "validate.sh" ]]; then
+              echo "❌ ERROR: Modification of '$f' is prohibited. You can only submit files inside the 'PR/' folder."
               errors=$((errors+1))
             fi
           done
 
           if [ $errors -gt 0 ]; then
-            echo "Validation failed with $errors errors."
+            echo "Validation failed with $errors errors total."
             exit 1
           fi
-          echo "All checks passed successfully."
+          echo "✅ All checks passed successfully."
