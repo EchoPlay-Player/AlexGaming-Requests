@@ -10,31 +10,55 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Wichtig, um Unterschiede zwischen Branches zu berechnen
 
       - name: Install Validators
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq  # Für JSON Prüfung
-          pip install html5lib        # Für HTML Prüfung
+          sudo apt-get install -y jq
+          pip install html5lib
 
-      - name: Validate Files
+      - name: Check PR Description (Legal Agreement)
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          # Findet alle geänderten Dateien und prüft Syntax je nach Endung
+          echo "Checking legal agreement checkboxes..."
+          # Prüft auf [x] oder [X] für die drei wichtigen Sätze
+          if echo "$PR_BODY" | grep -qi "\[x\] I accept the Alex Gaming Proprietary License" && \
+             echo "$PR_BODY" | grep -qi "\[x\] I confirm that I will not clone the source code" && \
+             echo "$PR_BODY" | grep -qi "\[x\] I understand that maintainers only process"; then
+            echo "✅ Legal agreement verified."
+          else
+            echo "❌ ERROR: You must check all boxes in the 'Legal Agreement' section of the PR description!"
+            exit 1
+          fi
+
+      - name: Validate Files and Structure
+        run: |
           errors=0
+          
+          # 1. Dateiprüfung auf Syntax
           for file in $(find . -type f -not -path '*/.*'); do
-            echo "Processing $file..."
-            
-            # JSON Prüfung
+            echo "Checking syntax for $file..."
             if [[ $file == *.json ]]; then
               jq . "$file" > /dev/null || { echo "Invalid JSON in $file"; errors=$((errors+1)); }
-            
-            # HTML Prüfung
             elif [[ $file == *.html ]]; then
               python3 -m html.dom.minidom "$file" > /dev/null 2>&1 || { echo "Potential HTML error in $file"; }
-            
-            # Shell/Script Prüfung
             elif [[ $file == *.sh ]]; then
               bash -n "$file" || { echo "Bash syntax error in $file"; errors=$((errors+1)); }
+            fi
+          done
+
+          # 2. Strukturprüfung (Nur Änderungen in /PR/ erlaubt)
+          # Vergleicht den PR mit dem main Branch
+          echo "Checking file paths..."
+          changed_files=$(git diff --name-only origin/main...HEAD)
+          for f in $changed_files; do
+            # Erlaubt sind nur Dateien in PR/ oder Änderungen an Systemdateien im .github/ Ordner
+            if [[ ! $f == PR/* ]] && [[ ! $f == .github/* ]]; then
+              echo "❌ ERROR: Modification of $f is prohibited. Only files inside the 'PR/' folder may be submitted."
+              errors=$((errors+1))
             fi
           done
 
@@ -42,4 +66,4 @@ jobs:
             echo "Validation failed with $errors errors."
             exit 1
           fi
-          echo "All files passed functional check."
+          echo "All checks passed successfully."
